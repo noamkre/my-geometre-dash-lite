@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>Mini Geometry Dash</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      background: #222;
+      border: 2px solid cyan;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="game" width="800" height="300"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let gameState = "menu";
+let selectedStage = 0;
+
+const player = {
+  x: 80, y: 220, size: 30, vy: 0, gravity: 0.6, jumpPower: -12,
+  onGround: false, onPlatform: null, mode: "normal",
+  flySpeed: 3, waveSpeed: 4, ballBounce: -10
+};
+
+const stages = [
+  { id: 1, name: "שלב 1", unlockScore: 0, speed: 5, spawnRate: 90, floorSpikes: 0.3, portalInterval: 350, bg: "#222", color: "#4a9eff" },
+  { id: 2, name: "שלב 2", unlockScore: 1000, speed: 7, spawnRate: 70, floorSpikes: 0.6, portalInterval: 300, bg: "#2a1a1a", color: "#ff6b35" },
+  { id: 3, name: "שלב 3", unlockScore: 2500, speed: 9, spawnRate: 55, floorSpikes: 0.8, portalInterval: 250, bg: "#1a1a2a", color: "#9b59b6" },
+  { id: 4, name: "שלב 4", unlockScore: 4000, speed: 11, spawnRate: 45, floorSpikes: 1.0, portalInterval: 200, bg: "#2a0a0a", color: "#e74c3c" }
+];
+
+let highScores = [0, 0, 0, 0];
+let totalHighScore = 0;
+let obstacles = [], platforms = [], floorSpikes = [], portals = [];
+let frame = 0, speed = 5, score = 0, currentStage = 0, gameOver = false, mousePressed = false;
+
+function isStageUnlocked(i) { return totalHighScore >= stages[i].unlockScore; }
+
+function startGame(i) {
+  if (!isStageUnlocked(i)) return;
+  selectedStage = i;
+  currentStage = i;
+  gameState = "playing";
+  obstacles = []; platforms = []; floorSpikes = []; portals = [];
+  frame = 0; score = 0; gameOver = false;
+  player.y = 220; player.vy = 0; player.mode = "normal";
+  player.onGround = false; player.onPlatform = null; mousePressed = false;
+}
+
+function jump() {
+  if (player.mode === "normal" && (player.onGround || player.onPlatform)) {
+    player.vy = player.jumpPower;
+    player.onGround = false;
+    player.onPlatform = null;
+  }
+}
+
+canvas.addEventListener("mousedown", (e) => {
+  mousePressed = true;
+  if (gameState === "menu") {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    for (let i = 0; i < 4; i++) {
+      const bx = 100 + (i % 2) * 320, by = 120 + Math.floor(i / 2) * 120;
+      if (x >= bx && x <= bx + 280 && y >= by && y <= by + 80 && isStageUnlocked(i)) {
+        startGame(i);
+        break;
+      }
+    }
+  } else if (gameState === "gameover") {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (x >= 250 && x <= 400 && y >= 200 && y <= 240) startGame(selectedStage);
+    if (x >= 420 && x <= 550 && y >= 200 && y <= 240) gameState = "menu";
+  } else jump();
+});
+
+canvas.addEventListener("mouseup", () => { mousePressed = false; });
+
+document.addEventListener("keydown", (e) => {
+  if (gameState === "playing" && (e.code === "Space" || e.code === "ArrowUp")) {
+    mousePressed = true;
+    jump();
+  }
+  if (e.code === "Escape") gameState = "menu";
+});
+
+document.addEventListener("keyup", (e) => {
+  if (e.code === "Space" || e.code === "ArrowUp") mousePressed = false;
+});
+
+function update() {
+  if (gameState !== "playing" || gameOver) return;
+  frame++; score++;
+
+  const st = stages[currentStage];
+  speed = st.speed;
+
+  if (frame % st.portalInterval === 0) {
+    const types = player.mode === "normal" ? ["fly", "wave", "ball"] : ["gravity"];
+    portals.push({ x: 800, y: 120, w: 20, h: 140, type: types[Math.floor(Math.random() * types.length)] });
+  }
+
+  if (player.mode === "fly") {
+    player.y += mousePressed ? -player.flySpeed : player.flySpeed;
+    if (player.y < 0) player.y = 0;
+    if (player.y > 270) player.y = 270;
+    if (frame % (90 - currentStage * 15) === 0) {
+      const h = 50 + currentStage * 10;
+      obstacles.push(Math.random() < 0.5 ? 
+        { x: 800, y: 300 - h, w: 30, h: h, type: "air" } :
+        { x: 800, y: 0, w: 30, h: h, type: "air" });
+    }
+  } else if (player.mode === "wave") {
+    player.y += mousePressed ? -player.waveSpeed : player.waveSpeed;
+    if (player.y < 10) player.y = 10;
+    if (player.y > 280) player.y = 280;
+    if (frame % 70 === 0) {
+      const gy = 80 + Math.random() * 100, gh = 80;
+      obstacles.push({ x: 800, y: 0, w: 30, h: gy, type: "wall" });
+      obstacles.push({ x: 800, y: gy + gh, w: 30, h: 300 - (gy + gh), type: "wall" });
+    }
+  } else if (player.mode === "ball") {
+    player.vy += player.gravity;
+    player.y += player.vy;
+    if (player.y >= 220) { player.y = 220; player.vy = player.ballBounce; }
+    if (player.y <= 20) { player.y = 20; player.vy = -player.ballBounce; }
+    if (mousePressed && !player.gf) { player.vy = player.ballBounce; player.gf = true; }
+    if (!mousePressed) player.gf = false;
+    if (frame % 90 === 0) obstacles.push({ x: 800, y: 100 + Math.random() * 100, w: 30, h: 40, type: "block" });
+  } else {
+    if (frame % (30 - currentStage * 5) === 0 && Math.random() < st.floorSpikes) {
+      floorSpikes.push({ x: 800, y: 230, w: 30 + Math.random() * 60, h: 30 });
+    }
+    if (frame % st.spawnRate === 0) {
+      const r = Math.random();
+      if (r < 0.4) platforms.push({ x: 800, y: 180 - Math.random() * 40, w: 100, h: 15 });
+      else if (r < 0.7) {
+        const py = 170;
+        platforms.push({ x: 800, y: py, w: 120, h: 15 });
+        obstacles.push({ x: 850, y: py - 40, w: 30, h: 40, type: "block" });
+      } else {
+        platforms.push({ x: 800, y: 160, w: 70, h: 15 });
+        platforms.push({ x: 920, y: 190, w: 70, h: 15 });
+      }
+    }
+
+    player.vy += player.gravity;
+    player.y += player.vy;
+    player.onPlatform = null;
+
+    platforms.forEach(p => {
+      if (player.x + player.size > p.x && player.x < p.x + p.w &&
+          player.y + player.size >= p.y && player.y + player.size <= p.y + 10 && player.vy >= 0) {
+        player.y = p.y - player.size;
+        player.vy = 0;
+        player.onPlatform = p;
+      }
+    });
+
+    if (player.y >= 220) {
+      let spike = false;
+      floorSpikes.forEach(s => {
+        if (player.x + player.size > s.x && player.x < s.x + s.w) spike = true;
+      });
+      if (spike) {
+        gameOver = true;
+        gameState = "gameover";
+        if (score > highScores[selectedStage]) highScores[selectedStage] = score;
+        if (score > totalHighScore) totalHighScore = score;
+      } else {
+        player.y = 220;
+        player.vy = 0;
+        player.onGround = true;
+      }
+    }
+  }
+
+  portals.forEach(p => {
+    if (player.x + player.size > p.x && player.x < p.x + p.w &&
+        player.y + player.size > p.y && player.y < p.y + p.h) {
+      if (p.type === "fly" && player.mode !== "fly") {
+        player.mode = "fly"; player.vy = 0; platforms = []; floorSpikes = [];
+      } else if (p.type === "wave" && player.mode !== "wave") {
+        player.mode = "wave"; player.vy = 0; player.y = 150; platforms = []; floorSpikes = [];
+      } else if (p.type === "ball" && player.mode !== "ball") {
+        player.mode = "ball"; player.vy = player.ballBounce; player.y = 150; platforms = []; floorSpikes = [];
+      } else if (p.type === "gravity" && player.mode !== "normal") {
+        player.mode = "normal"; player.y = 150; player.vy = 0;
+        obstacles = obstacles.filter(o => !["air", "wall"].includes(o.type));
+      }
+    }
+  });
+
+  obstacles.forEach(o => o.x -= speed);
+  platforms.forEach(p => p.x -= speed);
+  floorSpikes.forEach(s => s.x -= speed);
+  portals.forEach(p => p.x -= speed);
+
+  obstacles = obstacles.filter(o => o.x + o.w > 0);
+  platforms = platforms.filter(p => p.x + p.w > 0);
+  floorSpikes = floorSpikes.filter(s => s.x + s.w > 0);
+  portals = portals.filter(p => p.x + p.w > 0);
+
+  obstacles.forEach(o => {
+    if (player.x < o.x + o.w && player.x + player.size > o.x &&
+        player.y < o.y + o.h && player.y + player.size > o.y) {
+      gameOver = true;
+      gameState = "gameover";
+      if (score > highScores[selectedStage]) highScores[selectedStage] = score;
+      if (score > totalHighScore) totalHighScore = score;
+    }
+  });
+
+  if (player.mode === "normal" && player.y > 300) {
+    gameOver = true;
+    gameState = "gameover";
+    if (score > highScores[selectedStage]) highScores[selectedStage] = score;
+    if (score > totalHighScore) totalHighScore = score;
+  }
+}
+
+function draw() {
+  if (gameState === "menu") {
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0, 0, 800, 300);
+    ctx.fillStyle = "#00ffff";
+    ctx.font = "bold 40px Arial";
+    ctx.fillText("⚡ GEOMETRY DASH ⚡", 180, 50);
+    ctx.fillStyle = "white";
+    ctx.font = "18px Arial";
+    ctx.fillText("שיא כללי: " + totalHighScore, 330, 80);
+
+    for (let i = 0; i < 4; i++) {
+      const s = stages[i], bx = 100 + (i % 2) * 320, by = 120 + Math.floor(i / 2) * 120;
+      const u = isStageUnlocked(i);
+      ctx.fillStyle = u ? s.color : "#333";
+      ctx.fillRect(bx, by, 280, 80);
+      ctx.strokeStyle = u ? "#fff" : "#666";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(bx, by, 280, 80);
+      ctx.fillStyle = u ? "white" : "#666";
+      ctx.font = "bold 20px Arial";
+      ctx.fillText(s.name, bx + 10, by + 30);
+      if (u) {
+        ctx.font = "16px Arial";
+        ctx.fillText("שיא: " + highScores[i], bx + 10, by + 55);
+        ctx.fillText("מהירות: " + s.speed, bx + 160, by + 55);
+        ctx.fillStyle = "#ffff00";
+        ctx.font = "14px Arial";
+        ctx.fillText("לחץ לשחק!", bx + 90, by + 72);
+      } else {
+        ctx.fillStyle = "#ff0000";
+        ctx.font = "16px Arial";
+        ctx.fillText("🔒 נעול", bx + 10, by + 55);
+        ctx.fillStyle = "#999";
+        ctx.font = "14px Arial";
+        ctx.fillText("צריך " + s.unlockScore + " נקודות", bx + 100, by + 55);
+      }
+    }
+  } else if (gameState === "playing") {
+    const st = stages[currentStage];
+    ctx.fillStyle = st.bg;
+    ctx.fillRect(0, 0, 800, 300);
+
+    ctx.fillStyle = "white";
+    ctx.font = "18px Arial";
+    ctx.fillText("ניקוד: " + score, 20, 30);
+    ctx.fillText(st.name, 20, 55);
+    const mt = player.mode === "fly" ? "🚀 טיסה" : player.mode === "wave" ? "🌊 גל" : player.mode === "ball" ? "⚽ כדור" : "🏃 רגיל";
+    ctx.fillText("מצב: " + mt, 20, 80);
+
+    if (player.mode === "normal") {
+      ctx.fillStyle = "#555";
+      ctx.fillRect(0, 260, 800, 40);
+      floorSpikes.forEach(sp => {
+        ctx.fillStyle = "red";
+        for (let j = 0; j < sp.w / 15; j++) {
+          ctx.beginPath();
+          ctx.moveTo(sp.x + j * 15, 260);
+          ctx.lineTo(sp.x + j * 15 + 7.5, 230);
+          ctx.lineTo(sp.x + j * 15 + 15, 260);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+      platforms.forEach(p => {
+        ctx.fillStyle = "#4a9eff";
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+      });
+    }
+
+    portals.forEach(p => {
+      const col = p.type === "fly" ? "rgba(138,43,226,0.6)" : p.type === "wave" ? "rgba(0,191,255,0.6)" : p.type === "ball" ? "rgba(255,165,0,0.6)" : "rgba(50,205,50,0.6)";
+      const em = p.type === "fly" ? "🚀" : p.type === "wave" ? "🌊" : p.type === "ball" ? "⚽" : "⬇️";
+      ctx.fillStyle = col;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = "white";
+      ctx.font = "30px Arial";
+      ctx.fillText(em, p.x - 5, p.y + 90);
+    });
+
+    obstacles.forEach(o => {
+      ctx.fillStyle = o.type === "wall" ? "#00ffff" : "#ff6b35";
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+    });
+
+    if (player.mode === "fly") {
+      ctx.fillStyle = "#ffff00";
+      ctx.beginPath();
+      ctx.moveTo(player.x + player.size, player.y + player.size / 2);
+      ctx.lineTo(player.x, player.y);
+      ctx.lineTo(player.x, player.y + player.size);
+      ctx.closePath();
+      ctx.fill();
+    } else if (player.mode === "wave") {
+      ctx.fillStyle = "#00bfff";
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y + player.size / 2);
+      ctx.lineTo(player.x + player.size / 3, player.y);
+      ctx.lineTo(player.x + 2 * player.size / 3, player.y + player.size);
+      ctx.lineTo(player.x + player.size, player.y + player.size / 2);
+      ctx.closePath();
+      ctx.fill();
+    } else if (player.mode === "ball") {
+      ctx.fillStyle = "#ffa500";
+      ctx.beginPath();
+      ctx.arc(player.x + player.size / 2, player.y + player.size / 2, player.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "cyan";
+      ctx.fillRect(player.x, player.y, player.size, player.size);
+    }
+  } else if (gameState === "gameover") {
+    ctx.fillStyle = "rgba(0,0,0,0.85)";
+    ctx.fillRect(0, 0, 800, 300);
+    ctx.fillStyle = "#ff0000";
+    ctx.font = "bold 36px Arial";
+    ctx.fillText("💀 משחק נגמר 💀", 270, 80);
+    ctx.fillStyle = "white";
+    ctx.font = "24px Arial";
+    ctx.fillText("ניקוד: " + score, 340, 120);
+    ctx.fillText("שיא: " + highScores[selectedStage], 340, 150);
+
+    ctx.fillStyle = "#4a9eff";
+    ctx.fillRect(250, 200, 150, 40);
+    ctx.fillStyle = "white";
+    ctx.font = "20px Arial";
+    ctx.fillText("שחק שוב", 280, 228);
+
+    ctx.fillStyle = "#ff6b35";
+    ctx.fillRect(420, 200, 130, 40);
+    ctx.fillStyle = "white";
+    ctx.fillText("תפריט", 460, 228);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
